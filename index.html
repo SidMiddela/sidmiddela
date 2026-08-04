@@ -228,6 +228,20 @@
       box-shadow: 0 0 0 2px rgba(217, 79, 112, 0.1);
     }
 
+    .other-input-container {
+      margin-top: 10px;
+    }
+
+    .other-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--primary-color);
+      border-radius: 12px;
+      font: inherit;
+      background: #fff;
+      outline: none;
+    }
+
     .nav {
       display: flex;
       justify-content: space-between;
@@ -413,6 +427,9 @@
       <div id="sectionLabel" class="section-label">Daily Connection</div>
       <h2 id="questionText" class="question"></h2>
       <div id="options" class="options"></div>
+      <div id="otherContainer" class="other-input-container hidden">
+        <input type="text" id="otherText" class="other-input" placeholder="Type your answer here..." />
+      </div>
 
       <div class="nav">
         <button class="btn btn-secondary" id="backBtn">Back</button>
@@ -473,7 +490,7 @@
     }
 
     // Quiz Questions Data
-    const questions = [
+    const baseQuestions = [
       {
         section: "Daily Connection",
         text: "What kind of message makes you happiest during the day?",
@@ -716,6 +733,12 @@
       }
     ];
 
+    // Dynamically append an "Other" option to every question
+    const questions = baseQuestions.map(q => ({
+      ...q,
+      options: [...q.options, ["Other (write your own...)", "qualityTime"]]
+    }));
+
     const rewards = {
       food: {
         name: "A Long-Distance Dinner Date",
@@ -754,6 +777,7 @@
 
     let currentQuestion = 0;
     let answers = new Array(questions.length).fill(null);
+    let customAnswers = new Array(questions.length).fill("");
     let scores = { food: 0, romance: 0, qualityTime: 0, gifts: 0, travel: 0, selfCare: 0 };
     let finalResult = null;
     const formspreeEndpoint = "https://formspree.io/f/xwvggqgn";
@@ -763,6 +787,8 @@
     const resultScreen = document.getElementById("resultScreen");
     const questionText = document.getElementById("questionText");
     const optionsBox = document.getElementById("options");
+    const otherContainer = document.getElementById("otherContainer");
+    const otherText = document.getElementById("otherText");
     const questionCounter = document.getElementById("questionCounter");
     const sectionCounter = document.getElementById("sectionCounter");
     const sectionLabel = document.getElementById("sectionLabel");
@@ -779,12 +805,13 @@
     document.getElementById("restartBtn").addEventListener("click", () => {
       currentQuestion = 0;
       answers = new Array(questions.length).fill(null);
+      customAnswers = new Array(questions.length).fill("");
       scores = { food: 0, romance: 0, qualityTime: 0, gifts: 0, travel: 0, selfCare: 0 };
       finalResult = null;
       document.getElementById("submitStatus").textContent = "";
       document.getElementById("submitStatus").className = "submit-status";
       document.getElementById("sendAnswersBtn").disabled = false;
-      document.getElementById("sendAnswersBtn").textContent = "Send my answers ❤️";
+      document.getElementById("sendAnswersBtn").textContent = "Get your reward ❤️";
       resultScreen.classList.add("hidden");
       startScreen.classList.remove("hidden");
     });
@@ -797,6 +824,13 @@
     });
 
     nextBtn.addEventListener("click", () => {
+      const isOther = answers[currentQuestion] === questions[currentQuestion].options.length - 1;
+      if (isOther && !otherText.value.trim()) return;
+
+      if (isOther) {
+        customAnswers[currentQuestion] = otherText.value.trim();
+      }
+
       if (answers[currentQuestion] === null) return;
       if (currentQuestion < questions.length - 1) {
         currentQuestion++;
@@ -804,6 +838,13 @@
       } else {
         calculateResults();
         showResults();
+      }
+    });
+
+    otherText.addEventListener("input", () => {
+      const isOther = answers[currentQuestion] === questions[currentQuestion].options.length - 1;
+      if (isOther) {
+        nextBtn.disabled = !otherText.value.trim();
       }
     });
 
@@ -816,6 +857,14 @@
       progressBar.style.width = `${((currentQuestion + 1) / questions.length) * 100}%`;
 
       optionsBox.innerHTML = "";
+      otherText.value = customAnswers[currentQuestion] || "";
+
+      const otherIdx = question.options.length - 1;
+      if (answers[currentQuestion] === otherIdx) {
+        otherContainer.classList.remove("hidden");
+      } else {
+        otherContainer.classList.add("hidden");
+      }
 
       question.options.forEach((option, index) => {
         const button = document.createElement("button");
@@ -830,14 +879,22 @@
           answers[currentQuestion] = index;
           document.querySelectorAll(".option").forEach(el => el.classList.remove("selected"));
           button.classList.add("selected");
-          nextBtn.disabled = false;
+
+          if (index === otherIdx) {
+            otherContainer.classList.remove("hidden");
+            otherText.focus();
+            nextBtn.disabled = !otherText.value.trim();
+          } else {
+            otherContainer.classList.add("hidden");
+            nextBtn.disabled = false;
+          }
         });
 
         optionsBox.appendChild(button);
       });
 
       backBtn.disabled = currentQuestion === 0;
-      nextBtn.disabled = answers[currentQuestion] === null;
+      nextBtn.disabled = answers[currentQuestion] === null || (answers[currentQuestion] === otherIdx && !otherText.value.trim());
       nextBtn.textContent = currentQuestion === questions.length - 1 ? "See my surprise" : "Next";
     }
 
@@ -890,11 +947,13 @@
       const status = document.getElementById("submitStatus");
 
       const answerDetails = answers.map((answerIndex, questionIndex) => {
+        const otherIdx = questions[questionIndex].options.length - 1;
+        const answerVal = answerIndex === otherIdx ? `Other: "${customAnswers[questionIndex]}"` : questions[questionIndex].options[answerIndex][0];
         return {
           number: questionIndex + 1,
           section: questions[questionIndex].section,
           question: questions[questionIndex].text,
-          answer: questions[questionIndex].options[answerIndex][0]
+          answer: answerVal
         };
       });
 
@@ -917,7 +976,7 @@
       formData.append("_subject", `Love quiz answers from ${finalResult.wifeName}`);
 
       sendButton.disabled = true;
-      sendButton.textContent = "Sending…";
+      sendButton.textContent = "Claiming…";
       status.textContent = "";
       status.className = "submit-status";
 
@@ -930,14 +989,14 @@
 
         if (!response.ok) throw new Error("Submission failed");
 
-        status.textContent = "Sent successfully ❤️";
+        status.textContent = "Reward claimed! Siddartha will receive your answers ❤️";
         status.className = "submit-status success";
-        sendButton.textContent = "Answers sent ✓";
+        sendButton.textContent = "Reward Claimed ✓";
       } catch (error) {
-        status.textContent = "The answers could not be sent. Please check the connection and try again.";
+        status.textContent = "Could not process right now. Please check the connection and try again.";
         status.className = "submit-status error";
         sendButton.disabled = false;
-        sendButton.textContent = "Try sending again";
+        sendButton.textContent = "Try again";
       }
     }
   </script>
